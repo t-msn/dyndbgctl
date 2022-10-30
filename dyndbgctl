@@ -76,10 +76,9 @@ _disable() {
 options="$(getopt -o ef:hp: -l "enabled,flags:,help,path:" -- "$@")" || exit 1
 eval set -- "$options"
 
-
 while [[ "$#" -gt 0 ]]; do
         case "$1" in
-                -e|-enabled)
+                -e|--enabled)
                         ENABLED=1
                         ;;
                 -f|--flags)
