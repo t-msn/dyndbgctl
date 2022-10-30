@@ -1,0 +1,139 @@
+#!/bin/bash -e
+# SPDX-License-Identifier: GPL-2.0
+set -o pipefail
+
+#DYNCTLPATH_DEFAULT="/sys/kernel/debug/dynamic_debug/control"
+DYNCTLPATH_DEFAULT="/proc/dynamic_debug/control"
+FLAGS_DEFAULT="flmt"
+
+# these variables can be changed by option arguments
+ENABLED=0
+FLAGS="p$FLAGS_DEFAULT"
+DYNCTLPATH="$DYNCTLPATH_DEFAULT"
+
+_usage() {
+        echo "Usage: $(basename "$0") [options] command pattern"
+        echo "  options:"
+        echo "        -e|--enabled Show currently enabled dynamic debugs (for list command)"
+        echo "        -f|--flags   Decoration flags (default: $FLAGS_DEFAULT, for enable command)"
+        echo "                       f: Include function name"
+        echo "                       l: Include Line number"
+        echo "                       m: Include module name"
+        echo "                       t: Include thread ID"
+        echo ""
+        echo "        -p|--path    Path to dynamic_deubg/control (default: $DYNCTLPATH_DEFAULT)"
+        echo "        -h|--help    Show this help message"
+        echo ""
+        echo "  command:"
+        echo "        list         Show list of available dynamic debugs"
+        echo "        enable       Enable dynamic debug"
+        echo "        disable      Disable dynamic debug"
+        echo "        reset        Clear all settings"
+        echo ""
+        echo "  pattern:           Dynamic debug pattern (for enable/disable)"
+        echo "                     Examples:"
+        echo "                       \"file XXX.c\", \"file dir/subdir/*\""
+        echo "                       \"func func_name\""
+        echo "                       \"module mod_name\""
+        echo ""
+        echo "See https://www.kernel.org/doc/html/latest/admin-guide/dynamic-debug-howto.html for details"
+}
+
+_error() {
+        echo "ERROR: $@ (see help with -h)" >&2
+        exit 1
+}
+
+_list() {
+        if [[ "$ENABLED" -eq 0 ]]; then
+                # show all controls
+                cat "$DYNCTLPATH"
+        else
+                # show enabled controls (which has p flags)
+                cat "$DYNCTLPATH" | awk '$3 ~ /p/ {print}'
+        fi
+}
+
+_enable() {
+        ENABLED=1
+        before=$(_list | wc -l)
+        # "=" discards current flags if any
+        sh -c "echo $1 =$FLAGS > $DYNCTLPATH"
+        after=$(_list | wc -l)
+
+        echo "enable $((after - before)) debugs"
+}
+
+_disable() {
+        ENABLED=1
+        before=$(_list | wc -l)
+        sh -c "echo $1 =_ > $DYNCTLPATH"
+        after=$(_list | wc -l)
+
+        echo "disable $((before - after)) debugs"
+}
+
+options="$(getopt -o ef:hp: -l "enabled,flags:,help,path:" -- "$@")" || exit 1
+eval set -- "$options"
+
+
+while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+                -e|-enabled)
+                        ENABLED=1
+                        ;;
+                -f|--flags)
+                        FLAGS="p$2"
+                        shift
+                        ;;
+                -h|--help)
+                        _usage
+                        exit 0
+                        ;;
+                -p|--path)
+                        DYNCTLPATH="$2"
+                        shift
+                        ;;
+                --)
+                        shift
+                        break
+                        ;;
+                *)
+                        _error "unknown option: $1"
+                        ;;
+        esac
+        shift
+done
+
+if [[ "$#" -eq 0 ]]; then
+        _error "missing command"
+fi
+
+case "$1" in
+        list)
+                shift
+                _list
+                ;;
+        enable)
+                shift
+                if [[ -z "$@" ]]; then
+                        _error "missing debug control pattern"
+                fi
+                _enable "$@"
+                ;;
+        disable)
+                shift
+                if [[ -z "$@" ]]; then
+                        _error "missing debug control pattern"
+                fi
+                _disable "$@"
+                ;;
+        reset)
+                _disable ""
+                ;;
+        *)
+                _error "unknown command: $1"
+                ;;
+esac
+
+exit 0
